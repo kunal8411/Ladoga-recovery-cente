@@ -4,3 +4,17 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# These values are meant to be in the browser bundle. Next.js inlines every
+# NEXT_PUBLIC_* variable, and Netlify's scanner treats that as a leaked secret.
+[secrets_scanning]
+  enabled = true
+  omit_keys = [
+    "NEXT_PUBLIC_APP_URL",
+    "NEXT_PUBLIC_SHORTCUT_URL",
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+    "NEXT_PUBLIC_CLERK_SIGN_IN_URL",
+    "NEXT_PUBLIC_CLERK_SIGN_UP_URL",
+    "NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL",
+    "NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL",
+  ]
