@@ -19,7 +19,7 @@ function resolveRole(email: string, metadataRole: unknown): StaffRole {
     .filter(Boolean);
   if (admins.length === 0) return "admin";
   return admins.includes(email.toLowerCase()) ? "admin" : "clinician";
-}
+}  
 
 export async function requireStaff(): Promise<Staff> {
   const { userId, redirectToSignIn } = await auth();
