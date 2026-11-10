@@ -3,7 +3,7 @@
 import { Watch } from "lucide-react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
-import { useActionState, useState } from "react";
+import { useActionState, useState, useSyncExternalStore } from "react";
 import { activateWearable, revokeWearable, sendSimulatedData, type ActivateState } from "@/actions/devices";
 import type { WearableStatus } from "@/lib/types";
 import { CopyButton } from "./copy-button";
@@ -23,31 +23,49 @@ interface Props {
   consentGiven: boolean;
 }
 
-function ActivateForm({ patientId, consentGiven, label }: { patientId: string; consentGiven: boolean; label: string }) {
-  const [state, action, pending] = useActionState<ActivateState, FormData>(activateWearable, { ok: false });
+function keyStorageId(patientId: string) {
+  return `rs-device-key:${patientId}`;
+}
 
-  if (state.ok && state.deviceKey) {
-    return (
-      <div className="rounded-lg border border-brand-200 bg-brand-50/50 p-4">
-        <p className="text-sm font-semibold text-brand-900">Device key issued. It&apos;s shown only once.</p>
-        <p className="mt-1 text-xs text-slate-600">Paste it into the Recovery Shield Shortcut on the patient&apos;s iPhone, or scan the QR code with the iPhone camera and tap Copy.</p>
-        <div className="mt-3 flex flex-wrap items-center gap-4">
-          <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
-            <QRCodeSVG value={state.deviceKey} size={132} />
-          </div>
-          <div className="space-y-2">
-            <code className="block rounded-md bg-white px-3 py-2 font-mono text-sm font-semibold tracking-wider text-slate-900 ring-1 ring-slate-200">{state.deviceKey}</code>
-            <div className="flex gap-2">
-              <CopyButton text={state.deviceKey} />
-              <Link href="/device-setup" className="btn-secondary btn-sm">
-                iPhone setup guide →
-              </Link>
-            </div>
+function rememberKey(patientId: string, key: string) {
+  sessionStorage.setItem(keyStorageId(patientId), key);
+  window.dispatchEvent(new Event("rs-device-key"));
+}
+
+function IssuedKey({ deviceKey, onDone }: { deviceKey: string; onDone: () => void }) {
+  return (
+    <div className="rounded-lg border border-brand-200 bg-brand-50/50 p-4">
+      <p className="text-sm font-semibold text-brand-900">Device key issued. Copy it now.</p>
+      <p className="mt-1 text-xs text-slate-600">Paste it into the Recovery Shield Shortcut on the patient&apos;s iPhone, or scan the QR code with the iPhone camera and tap Copy. This key is not shown again after you leave this page.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-4">
+        <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+          <QRCodeSVG value={deviceKey} size={132} />
+        </div>
+        <div className="space-y-2">
+          <code className="block rounded-md bg-white px-3 py-2 font-mono text-sm font-semibold tracking-wider text-slate-900 ring-1 ring-slate-200">{deviceKey}</code>
+          <div className="flex gap-2">
+            <CopyButton text={deviceKey} />
+            <Link href="/device-setup" className="btn-secondary btn-sm">
+              iPhone setup guide →
+            </Link>
+            <button type="button" className="btn-secondary btn-sm" onClick={onDone}>
+              Done
+            </button>
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+function ActivateForm({ patientId, consentGiven, label }: { patientId: string; consentGiven: boolean; label: string }) {
+  const [state, action, pending] = useActionState<ActivateState, FormData>(async (prev, formData) => {
+    const result = await activateWearable(prev, formData);
+    if (result.deviceKey) rememberKey(patientId, result.deviceKey);
+    return result;
+  }, { ok: false });
+
+  if (state.ok && state.deviceKey) return null;
 
   return (
     <form action={action} className="space-y-3">
@@ -72,7 +90,21 @@ function ActivateForm({ patientId, consentGiven, label }: { patientId: string; c
 
 export function WearablePanel(p: Props) {
   const [showReissue, setShowReissue] = useState(false);
+  const issuedKey = useSyncExternalStore(
+    (onStoreChange) => {
+      window.addEventListener("rs-device-key", onStoreChange);
+      return () => window.removeEventListener("rs-device-key", onStoreChange);
+    },
+    () => sessionStorage.getItem(keyStorageId(p.patientId)),
+    () => null,
+  );
   const paired = p.status === "active" || p.status === "pending";
+
+  function clearIssuedKey() {
+    sessionStorage.removeItem(keyStorageId(p.patientId));
+    window.dispatchEvent(new Event("rs-device-key"));
+    setShowReissue(false);
+  }
 
   return (
     <div className="space-y-4 p-5">
@@ -106,7 +138,9 @@ export function WearablePanel(p: Props) {
         </dl>
       )}
 
-      {p.status === "pending" && (
+      {issuedKey && <IssuedKey deviceKey={issuedKey} onDone={clearIssuedKey} />}
+
+      {p.status === "pending" && !issuedKey && (
         <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">
           Waiting for {p.firstName}&apos;s iPhone to send its first update. Run the Recovery Shield Shortcut once to complete pairing.
         </p>
