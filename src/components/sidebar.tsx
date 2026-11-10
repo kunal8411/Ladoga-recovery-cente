@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { Bell, ClipboardList, LayoutDashboard, Settings, ShieldCheck, Smartphone, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { usePendingPath } from "@/components/pending-path";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -17,6 +18,7 @@ const NAV = [
 
 export function Sidebar({ staffName, role, activeAlerts }: { staffName: string; role: string; activeAlerts: number }) {
   const pathname = usePathname();
+  const pendingPath = usePendingPath();
   return (
     <aside className="flex w-full shrink-0 flex-col bg-slate-950 text-slate-300 lg:sticky lg:top-0 lg:h-screen lg:w-60">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -31,19 +33,26 @@ export function Sidebar({ staffName, role, activeAlerts }: { staffName: string; 
       <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-1 lg:flex-col lg:overflow-visible">
         {NAV.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
+          const pending = pendingPath === href || pendingPath?.startsWith(`${href}/`);
           return (
             <Link
               key={href}
               href={href}
+              aria-busy={pending || undefined}
               className={clsx(
                 "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm whitespace-nowrap transition",
-                active ? "bg-white/10 font-medium text-white" : "hover:bg-white/5 hover:text-white",
+                active || pending ? "bg-white/10 font-medium text-white" : "hover:bg-white/5 hover:text-white",
               )}
             >
               <Icon className="size-4" />
               <span className="flex-1">{label}</span>
-              {href === "/alerts" && activeAlerts > 0 && (
-                <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{activeAlerts}</span>
+              {pending ? (
+                <span className="size-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" />
+              ) : (
+                href === "/alerts" &&
+                activeAlerts > 0 && (
+                  <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{activeAlerts}</span>
+                )
               )}
             </Link>
           );

@@ -1,5 +1,6 @@
 import "server-only";
 import { ObjectId, type Filter } from "mongodb";
+import { applyDemoRow, buildDemoVitals, demoDataEnabled } from "./demo-mode";
 import { ageFrom, fullName, isOnline, programDay } from "./format";
 import { getCollections, type Collections } from "./mongodb";
 import { effectiveThresholds, getAlertRules } from "./settings";
@@ -136,7 +137,7 @@ export async function listPatients() {
     cols.patients.find({}).sort({ "wearable.status": 1, lastName: 1 }).toArray(),
     getAlertRules(cols),
   ]);
-  const rows = await buildRows(cols, patients, rules);
+  const rows = (await buildRows(cols, patients, rules)).map(applyDemoRow);
   const statusOrder = { active: 0, pending: 1, revoked: 2, not_paired: 3 };
   return rows.sort((a, b) => statusOrder[a.wearableStatus] - statusOrder[b.wearableStatus] || a.lastName.localeCompare(b.lastName));
 }
@@ -225,8 +226,10 @@ export async function getPatientDetail(id: string) {
     (series[r.type] ??= []).push({ t: new Date(r.recordedAt).getTime(), v: r.value });
   }
 
-  const [row] = await buildRows(cols, [patient], rules);
+  const [built] = await buildRows(cols, [patient], rules);
+  const row = applyDemoRow(built);
   const thresholds = effectiveThresholds(patient, rules);
+  const demo = demoDataEnabled() && !patient.isSynthetic ? buildDemoVitals(row.id, patient.lastLocation) : null;
 
   return {
     row,
@@ -239,15 +242,19 @@ export async function getPatientDetail(id: string) {
       consentDate: iso(patient.consentDate),
       notes: patient.notes,
       createdAt: iso(patient.createdAt)!,
-      activatedAt: iso(patient.wearable?.activatedAt),
+      activatedAt: demo
+        ? (iso(patient.wearable?.activatedAt) ?? new Date(Date.now() - 2 * 24 * 3600_000).toISOString())
+        : iso(patient.wearable?.activatedAt),
       keyHint: patient.wearable?.keyHint,
-      source: patient.wearable?.source,
+      source: demo ? "apple_shortcuts" : patient.wearable?.source,
     },
-    latest: Object.fromEntries(
-      Object.entries(patient.latest ?? {}).map(([k, v]) => [k, { value: v!.value, at: iso(v!.at)! }]),
-    ) as Partial<Record<ReadingType, { value: number; at: string }>>,
-    series,
-    locations: locations.map((l) => ({ lat: l.lat, lng: l.lng, at: iso(l.recordedAt)!, accuracy: l.accuracy })),
+    latest: demo
+      ? demo.latest
+      : (Object.fromEntries(
+          Object.entries(patient.latest ?? {}).map(([k, v]) => [k, { value: v!.value, at: iso(v!.at)! }]),
+        ) as Partial<Record<ReadingType, { value: number; at: string }>>),
+    series: demo ? demo.series : series,
+    locations: demo ? demo.locations : locations.map((l) => ({ lat: l.lat, lng: l.lng, at: iso(l.recordedAt)!, accuracy: l.accuracy })),
     geofences: geofences.map<GeofenceView>((g) => ({
       id: g._id.toString(),
       name: g.name,
